@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mobile Mines (Sketch Design)</title>
+  <style>
+    /* reset */
+    * { box-sizing: border-box; margin:0; padding:0 }
+    body {
+      background: #f0f2f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: sans-serif;
+      background: url("background.jpg");
+      background-size: cover;
+    }
+
+    /* card container */
+    .game-card {
+      background: #fff;
+      border: 4px solid #ccc;
+      border-radius: 12px;
+      padding: 16px;
+      width: 90vw;
+      max-width: 360px;
+      box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* New Game button & status */
+    .controls {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .controls button {
+      padding: 6px 12px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    .status {
+      font-size: 0.9rem;
+      font-weight: bold;
+      color: #c00;
+    }
+
+    /* the grid */
+    .board {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 4px;
+      flex: 1;
+    }
+    .cell {
+      background: #e0e4e8;
+      aspect-ratio: 1/1;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      user-select: none;
+      font-size: 1rem;
+      color: #333;
+      transition: background 0.3s, transform 0.2s;
+    }
+    .cell:active { transform: scale(0.95); }
+
+    .revealed { background: #fafafa; cursor: default; }
+    .mine.revealed {
+      background: #fdd;
+      color: #c00;
+      animation: pop 0.3s ease;
+    }
+    .flagged { background: #fd8; color: #c60; }
+
+    @keyframes pop {
+      0%   { transform: scale(0.5); }
+      100% { transform: scale(1); }
+    }
+
+    /* footer “couple vs couple” */
+    .footer {
+      margin-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.9rem;
+      color: #555;
+    }
+    .pair {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .avatar {
+      width: 28px; height: 28px;
+      background: #ddd;
+      border-radius: 50%;
+    }
+    .heart { color: #e74c3c; font-size: 1.1rem; }
+    .vs { font-weight: bold; }
+  </style>
+</head>
+<body>
+
+  <div class="game-card">
+    <div class="controls">
+      <button id="newGame">New Game</button>
+      <div id="status" class="status"></div>
+    </div>
+    <div class="board" id="board"></div>
+    <div class="footer">
+      <div class="pair">
+        <div class="avatar"></div>
+        <span class="heart">❤️</span>
+        <div class="avatar"></div>
+      </div>
+      <div class="vs">VS</div>
+      <div class="pair">
+        <div class="avatar"></div>
+        <span class="heart">❤️</span>
+        <div class="avatar"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ROWS = 8, COLS = 8, MINES = 10;
+    const boardEl = document.getElementById('board');
+    const statusEl = document.getElementById('status');
+    const newGameBtn = document.getElementById('newGame');
+    let grid, locked = false;
+
+    newGameBtn.addEventListener('click', init);
+
+    // build empty grid, plant mines & counts
+    function init() {
+      locked = false;
+      statusEl.textContent = '';
+      boardEl.innerHTML = '';
+      grid = Array(ROWS).fill().map(() =>
+        Array(COLS).fill().map(() => ({ mine:false, count:0, revealed:false, flagged:false }))
+      );
+      // place mines
+      let placed = 0;
+      while (placed < MINES) {
+        let r = Math.random()*ROWS|0, c = Math.random()*COLS|0;
+        if (!grid[r][c].mine) {
+          grid[r][c].mine = true;
+          placed++;
+        }
+      }
+      // neighbor counts
+      for (let r=0; r<ROWS; r++) {
+        for (let c=0; c<COLS; c++) {
+          if (grid[r][c].mine) continue;
+          let cnt=0;
+          for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++){
+            let nr=r+dr, nc=c+dc;
+            if (nr>=0&&nr<ROWS&&nc>=0&&nc<COLS&&grid[nr][nc].mine) cnt++;
+          }
+          grid[r][c].count = cnt;
+        }
+      }
+      render();
+    }
+
+    // render all cells
+    function render() {
+      boardEl.innerHTML = '';
+      for (let r=0; r<ROWS; r++) {
+        for (let c=0; c<COLS; c++) {
+          let cell = document.createElement('div');
+          cell.className = 'cell' +
+            (grid[r][c].revealed?' revealed':'') +
+            (grid[r][c].mine&&grid[r][c].revealed?' mine':'') +
+            (grid[r][c].flagged?' flagged':'');
+          cell.dataset.r = r; cell.dataset.c = c;
+          if (grid[r][c].revealed) {
+            if (!grid[r][c].mine && grid[r][c].count>0)
+              cell.textContent = grid[r][c].count;
+            if (grid[r][c].mine) cell.textContent = '💣';
+          } else if (grid[r][c].flagged) {
+            cell.textContent = '🚩';
+          }
+          boardEl.append(cell);
+        }
+      }
+    }
+
+    // flood reveal
+    function flood(r,c) {
+      if (r<0||r>=ROWS||c<0||c>=COLS) return;
+      let g = grid[r][c];
+      if (g.revealed||g.flagged) return;
+      g.revealed = true;
+      if (g.count===0 && !g.mine) {
+        for (let dr=-1; dr<=1; dr++) for (let dc=-1; dc<=1; dc++)
+          flood(r+dr, c+dc);
+      }
+    }
+
+    // reveal all bombs with staggered animation
+    function revealAllMines() {
+      let delay=0;
+      for (let r=0;r<ROWS;r++) {
+        for (let c=0;c<COLS;c++) {
+          if (grid[r][c].mine && !grid[r][c].flagged) {
+            setTimeout(()=>{
+              grid[r][c].revealed = true;
+              render();
+            }, delay);
+            delay += 50;
+          }
+        }
+      }
+    }
+
+    // handle touch: tap=click, long-press=flag
+    let longPress;
+    boardEl.addEventListener('touchstart', e=>{
+      if (locked) return;
+      const cell = e.target.closest('.cell');
+      if (!cell) return;
+      longPress = setTimeout(()=>{
+        let {r,c} = cell.dataset;
+        grid[r][c].flagged = !grid[r][c].flagged;
+        render();
+      }, 600);
+    });
+    boardEl.addEventListener('touchend', e=>{
+      clearTimeout(longPress);
+      if (locked) return;
+      const cell = e.target.closest('.cell');
+      if (!cell) return;
+      let r=+cell.dataset.r, c=+cell.dataset.c, g=grid[r][c];
+      // if it was flagged toggle, skip reveal
+      if (g.flagged) return;
+      // reveal logic
+      if (g.mine) {
+        locked = true;
+        statusEl.textContent = 'Game Over';
+        revealAllMines();
+        return;
+      }
+      flood(r,c);
+      render();
+      // win?
+      let safe=0;
+      for (let i=0;i<ROWS;i++) for (let j=0;j<COLS;j++)
+        if (!grid[i][j].mine && grid[i][j].revealed) safe++;
+      if (safe === ROWS*COLS - MINES) {
+        locked = true;
+        statusEl.textContent = 'You Win! 🎉';
+        revealAllMines();
+      }
+    });
+
+    // start on load
+    init();
+  </script>
+
+</body>
+</html>
